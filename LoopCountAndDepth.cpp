@@ -12,7 +12,7 @@
 using namespace llvm;
 
 STATISTIC(CS551A1Count, "Counts number of loops");
-STATISTIC(CS551A1Depth, "Counts depth of loops");
+STATISTIC(CS551A1Depth, "The maximum depth of the loops seen");
 
 namespace {
     struct CS551A1 : public LoopPass
@@ -39,7 +39,10 @@ bool CS551A1::runOnLoop(Loop *LP, LPPassManager &LPM)
     // return if we modified the graph
     bool ModifiedP = false;
     ++CS551A1Count;
-    CS551A1Depth += LP->getLoopDepth();
+    unsigned int depth = LP->getLoopDepth();
+    if (CS551A1Depth < depth) {
+        CS551A1Depth = depth;
+    }
     return ModifiedP;
 }
 
