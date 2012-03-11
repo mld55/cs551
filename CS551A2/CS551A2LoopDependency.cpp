@@ -409,6 +409,7 @@ bool CS551A2::runOnLoop(Loop *L, LPPassManager &) {
   this->L = L;
   AA = &getAnalysis<AliasAnalysis>();
   SE = &getAnalysis<ScalarEvolution>();
+    DEBUG(this->dump());
   return false;
 }
 
