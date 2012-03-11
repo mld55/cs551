@@ -30,7 +30,7 @@
 
 using namespace llvm;
 
-namespace 
+namespace
 {
     class CS551A2 : public LoopPass
     {
@@ -38,11 +38,11 @@ namespace
         // BEGIN COPY-PASTE {{{
         /// TODO: doc
         enum DependenceResult { Independent = 0, Dependent = 1, Unknown = 2 };
-        
+
         struct Subscript {
-            
+
         };
-        
+
         /// DependencePair - Represents a data dependence relation between to memory
         /// reference instructions.
         struct DependencePair : public FastFoldingSetNode {
@@ -50,7 +50,7 @@ namespace
             Value *B;
             DependenceResult Result;
             SmallVector<Subscript, 4> Subscripts;
-            
+
             DependencePair(const FoldingSetNodeID &ID, Value *a, Value *b) :
             FastFoldingSetNode(ID), A(a), B(b), Result(Unknown), Subscripts() {}
         };
@@ -58,21 +58,21 @@ namespace
         /// findOrInsertDependencePair - Return true if a DependencePair for the
         /// given Values already exists, false if a new DependencePair had to be
         /// created. The third argument is set to the pair found or created.
-        bool findOrInsertDependencePair(Value*, Value*, CS551A2::DependencePair*&);
-        
+        bool findOrInsertDependencePair(Value*, Value*, DependencePair*&);
+
         /// getLoops - Collect all loops of the loop nest L in which
         /// a given SCEV is variant.
         void getLoops(const SCEV*, DenseSet<const Loop*>*) const;
-        
+
         /// isLoopInvariant - True if a given SCEV is invariant in all loops of the
         /// loop nest starting at the innermost loop L.
         bool isLoopInvariant(const SCEV*) const;
-        
+
         /// isAffine - An SCEV is affine with respect to the loop nest starting at
         /// the innermost loop L if it is of the form A+B*X where A, B are invariant
         /// in the loop nest and X is a induction variable in the loop nest.
         bool isAffine(const SCEV*) const;
-        
+
         /// TODO: doc
         bool isZIVPair(const SCEV*, const SCEV*) const;
         bool isSIVPair(const SCEV*, const SCEV*) const;
@@ -80,7 +80,7 @@ namespace
         DependenceResult analyseSIV(const SCEV*, const SCEV*, Subscript*) const;
         DependenceResult analyseMIV(const SCEV*, const SCEV*, Subscript*) const;
         DependenceResult analyseSubscript(const SCEV*, const SCEV*, Subscript*) const;
-        DependenceResult analysePair(CS551A2::DependencePair*);
+        DependenceResult analysePair(DependencePair*);
 
         void getMemRefInstrs(const Loop *, SmallVectorImpl<Instruction*> &);
         Value *getPointerOperand(Value *);
@@ -92,6 +92,8 @@ namespace
         AliasAnalysis::AliasResult underlyingObjectsAlias(AliasAnalysis *, const Value *, const Value *);
         void PrintLoopInfo(raw_ostream &OS, CS551A2 *, const Loop*);
 
+        void partition();
+
         // END COPY-PASTE }}}
 
         static char ID;
@@ -101,10 +103,9 @@ namespace
         virtual void print(raw_ostream &O, const Module *M) const;
         virtual void releaseMemory();
         virtual void getAnalysisUsage(AnalysisUsage&) const;
-        void partition();
-        
+
     private:
-        FoldingSet<CS551A2::DependencePair> Pairs;
+        FoldingSet<DependencePair> Pairs;
         BumpPtrAllocator PairAllocator;
         AliasAnalysis *AA;
         ScalarEvolution *SE;
@@ -161,7 +162,7 @@ bool CS551A2::isMemRefInstr(const Value *V) {
   return I && (I->mayReadFromMemory() || I->mayWriteToMemory());
 }
 
-void  CS551A2::getMemRefInstrs(const Loop *L, SmallVectorImpl<Instruction*> &Memrefs) {
+void CS551A2::getMemRefInstrs(const Loop *L, SmallVectorImpl<Instruction*> &Memrefs) {
   for (Loop::block_iterator b = L->block_begin(), be = L->block_end();
        b != be; ++b)
     for (BasicBlock::iterator i = (*b)->begin(), ie = (*b)->end();
@@ -208,7 +209,7 @@ CS551A2::getZeroSCEV(ScalarEvolution *SE) {
 //                             Dependence Testing
 //===----------------------------------------------------------------------===//
 
-bool CS551A2::findOrInsertDependencePair(Value *A, Value *B, CS551A2::DependencePair *&P) {
+bool CS551A2::findOrInsertDependencePair(Value *A, Value *B, DependencePair *&P) {
   void *insertPos = 0;
   FoldingSetNodeID id;
   id.AddPointer(A);
@@ -299,7 +300,7 @@ CS551A2::analyseSubscript(const SCEV *A, const SCEV *B, Subscript *S) const {
 }
 
 CS551A2::DependenceResult
-CS551A2::analysePair(CS551A2::DependencePair *P) {
+CS551A2::analysePair(DependencePair *P) {
   DEBUG(dbgs() << "Analysing:\n" << *P->A << "\n" << *P->B << "\n");
 
   // We only analyse loads and stores but no possible memory accesses by e.g.
@@ -349,8 +350,8 @@ CS551A2::analysePair(CS551A2::DependencePair *P) {
     const SCEV* aSCEV = (aIdx != aEnd)
         ? SE->getSCEV(*aIdx)
         : getZeroSCEV(SE);
-    const SCEV* bSCEV = (bIdx != bEnd) 
-        ? SE->getSCEV(*bIdx) 
+    const SCEV* bSCEV = (bIdx != bEnd)
+        ? SE->getSCEV(*bIdx)
         : getZeroSCEV(SE);
     opds.push_back(std::make_pair(aSCEV, bSCEV));
   }
@@ -425,7 +426,7 @@ void CS551A2::getAnalysisUsage(AnalysisUsage &AU) const {
 }
 
 bool CS551A2::isDependencePair(const Value *A, const Value *B) {
-    return 
+    return
         isMemRefInstr(A) &&
         isMemRefInstr(B) &&
     (cast<const Instruction>(A)->mayWriteToMemory() ||
