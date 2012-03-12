@@ -1,0 +1,9 @@
+SOURCES=test1.c test2.c test3.c
+TARGETS=$(SOURCES:.c=.ll)
+
+all: $(TARGETS)
+	@echo OK
+%.ll: %.bc
+	llvm-dis $^
+%.bc: %.c
+	clang -O0 -emit-llvm -c -o $@ $^
