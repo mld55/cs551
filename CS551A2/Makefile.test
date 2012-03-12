@@ -1,7 +1,8 @@
-SOURCES=test1.c test2.c test3.c
-TARGETS=$(SOURCES:.c=.ll)
+SOURCES=testZIV.c testSIV.c testMIV.c
+TEXT_TARGETS=$(SOURCES:.c=.ll)
+BIN_TARGETS=$(SOURCES:.c=.bc)
 
-all: $(TARGETS)
+all: $(BIN_TARGETS) $(TEXT_TARGETS)
 	@echo OK
 %.ll: %.bc
 	llvm-dis $^
