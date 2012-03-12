@@ -32,6 +32,38 @@ using namespace llvm;
 
 namespace
 {
+    class Assignment2
+    {
+        struct Subscript
+        {
+            Value* A;
+            Value* B;
+        };
+        enum DirectionType {    
+            LT, EQ, GT, STAR
+        };
+        struct DirectionV
+        {
+            std::vector<DirectionType> dir;
+        };
+        struct DistanceV
+        {
+            std::vector<int> distance;
+        };
+        bool isSeparable(Subscript* S);
+        bool isZIV(Subscript* S);
+        bool isSIV(Subscript* S);
+        bool isMIV(Subscript* S);
+        DirectionV *getDirectionVector(Subscript* S);
+        DistanceV *getDistanceVector(Subscript* S);
+        void partition(std::vector<Subscript*> S,
+                       std::vector< std::vector<Subscript*> > *P,
+                       int *nP);
+        void delta_test(std::vector<Subscript*> &subscripts,
+                        std::vector<DirectionV*> *DVset,
+                        std::vector<DistanceV*> *dVset);
+    };
+
     class CS551A2 : public LoopPass
     {
     public:
@@ -39,8 +71,11 @@ namespace
         /// TODO: doc
         enum DependenceResult { Independent = 0, Dependent = 1, Unknown = 2 };
 
-        struct Subscript {
-
+        struct SillySubscript
+        {
+            /// Is representing the Loop Variable here sufficent:
+            /// no because the aX+b might be important
+            /// how would we represent I+J
         };
 
         /// DependencePair - Represents a data dependence relation between to memory
@@ -49,10 +84,12 @@ namespace
             Value *A;
             Value *B;
             DependenceResult Result;
-            SmallVector<Subscript, 4> Subscripts;
+            // SmallVector<Subscript, 4> Subscripts;
 
-            DependencePair(const FoldingSetNodeID &ID, Value *a, Value *b) :
-            FastFoldingSetNode(ID), A(a), B(b), Result(Unknown), Subscripts() {}
+            DependencePair(const FoldingSetNodeID &ID, Value *a, Value *b)
+            : FastFoldingSetNode(ID), A(a), B(b), Result(Unknown)
+            //, Subscripts()
+            {}
         };
 
         /// findOrInsertDependencePair - Return true if a DependencePair for the
@@ -76,10 +113,10 @@ namespace
         /// TODO: doc
         bool isZIVPair(const SCEV*, const SCEV*) const;
         bool isSIVPair(const SCEV*, const SCEV*) const;
-        DependenceResult analyseZIV(const SCEV*, const SCEV*, Subscript*) const;
-        DependenceResult analyseSIV(const SCEV*, const SCEV*, Subscript*) const;
-        DependenceResult analyseMIV(const SCEV*, const SCEV*, Subscript*) const;
-        DependenceResult analyseSubscript(const SCEV*, const SCEV*, Subscript*) const;
+        DependenceResult analyseZIV(const SCEV*, const SCEV*) const;
+        DependenceResult analyseSIV(const SCEV*, const SCEV*) const;
+        DependenceResult analyseMIV(const SCEV*, const SCEV*) const;
+        DependenceResult analyseSubscript(const SCEV*, const SCEV*) const;
         DependenceResult analysePair(DependencePair*);
 
         void getMemRefInstrs(const Loop *, SmallVectorImpl<Instruction*> &);
@@ -108,6 +145,9 @@ namespace
         FoldingSet<DependencePair> Pairs;
         BumpPtrAllocator PairAllocator;
         AliasAnalysis *AA;
+        /*!
+         @brief Contains the Scalar Evaluator
+         */
         ScalarEvolution *SE;
         LoopInfo *LI;
         Loop *L;
@@ -171,6 +211,8 @@ void CS551A2::getMemRefInstrs(const Loop *L, SmallVectorImpl<Instruction*> &Memr
         Memrefs.push_back(i);
 }
 
+/*! @brief Decides if the presented Value is a Load or Store instruction.
+ */
 bool CS551A2::isLoadOrStoreInst(Value *I) {
   // Returns true if the load or store can be analyzed. Atomic and volatile
   // operations have properties which this analysis does not understand.
@@ -181,6 +223,9 @@ bool CS551A2::isLoadOrStoreInst(Value *I) {
   return false;
 }
 
+/*! @brief Returns the pointer operand of the given Load or Store instruction.
+ If you provide an instruction that is neither a Load or Store, you'll be sorry.
+ */
 Value *
 CS551A2::getPointerOperand(Value *I) {
   if (LoadInst *i = dyn_cast<LoadInst>(I))
@@ -219,15 +264,20 @@ bool CS551A2::findOrInsertDependencePair(Value *A, Value *B, DependencePair *&P)
   if (P) return true;
 
   P = new (PairAllocator)DependencePair(id, A, B);
-  Pairs.InsertNode(P, insertPos);
+  this->Pairs.InsertNode(P, insertPos);
   return false;
 }
 
+/*! @brief Gets the Loops where "S" is a Loop invariant,
+ returning the answer in "Loops".
+ */
 void CS551A2::getLoops(const SCEV *S, DenseSet<const Loop*>* Loops) const {
   // Refactor this into an SCEVVisitor, if efficiency becomes a concern.
-  for (const Loop *L = this->L; L != 0; L = L->getParentLoop())
-    if (!SE->isLoopInvariant(S, L))
-      Loops->insert(L);
+    for (const Loop *L = this->L; L != 0; L = L->getParentLoop()) {
+        if (!SE->isLoopInvariant(S, L)) {
+            Loops->insert(L);
+        }
+    }
 }
 
 bool CS551A2::isLoopInvariant(const SCEV *S) const {
@@ -257,24 +307,24 @@ bool CS551A2::isSIVPair(const SCEV *A, const SCEV *B) const {
 }
 
 CS551A2::DependenceResult
-CS551A2::analyseZIV(const SCEV *A, const SCEV *B, Subscript *S) const {
+CS551A2::analyseZIV(const SCEV *A, const SCEV *B) const {
   assert(isZIVPair(A, B) && "Attempted to ZIV-test non-ZIV SCEVs!");
   return A == B ? Dependent : Independent;
 }
 
 CS551A2::DependenceResult
-CS551A2::analyseSIV(const SCEV *A, const SCEV *B, Subscript *S) const {
+CS551A2::analyseSIV(const SCEV *A, const SCEV *B) const {
   return Unknown; // TODO: Implement.
 }
 
 CS551A2::DependenceResult
-CS551A2::analyseMIV(const SCEV *A, const SCEV *B, Subscript *S) const {
+CS551A2::analyseMIV(const SCEV *A, const SCEV *B) const {
   return Unknown; // TODO: Implement.
 }
 
 CS551A2::DependenceResult
-CS551A2::analyseSubscript(const SCEV *A, const SCEV *B, Subscript *S) const {
-  DEBUG(dbgs() << "  Testing subscript: A(" << *A << "), B(" << *B << ")\n");
+CS551A2::analyseSubscript(const SCEV *A, const SCEV *B) const {
+    DEBUG(dbgs() << "\n\nTesting subscript: A(" << *A << "), B(" << *B << ")\n");
 
   if (A == B) {
     DEBUG(dbgs() << "  -> [D] same SCEV\n");
@@ -291,12 +341,12 @@ CS551A2::analyseSubscript(const SCEV *A, const SCEV *B, Subscript *S) const {
     }
 
   if (isZIVPair(A, B))
-    return analyseZIV(A, B, S);
+    return analyseZIV(A, B);
 
   if (isSIVPair(A, B))
-    return analyseSIV(A, B, S);
+    return analyseSIV(A, B);
 
-  return analyseMIV(A, B, S);
+  return analyseMIV(A, B);
 }
 
 CS551A2::DependenceResult
@@ -329,32 +379,61 @@ CS551A2::analysePair(DependencePair *P) {
     break; // The underlying objects alias, test accesses for dependence.
   }
 
+  /// GEP is a Get Element Ptr instruction
   const GEPOperator *aGEP = dyn_cast<GEPOperator>(aPtr);
   const GEPOperator *bGEP = dyn_cast<GEPOperator>(bPtr);
 
   if (!aGEP || !bGEP)
     return Unknown;
 
+    DEBUG(dbgs() << "GEP-A := " << *aGEP << "\n" << "GEP-B := " << *bGEP << "\n");
+
   // FIXME: Is filtering coupled subscripts necessary?
 
-  // Collect GEP operand pairs (FIXME: use GetGEPOperands from BasicAA), adding
-  // trailing zeroes to the smaller GEP, if needed.
-  typedef SmallVector<std::pair<const SCEV*, const SCEV*>, 4> GEPOpdPairsTy;
-  GEPOpdPairsTy opds;
-  for(GEPOperator::const_op_iterator aIdx = aGEP->idx_begin(),
-                                     aEnd = aGEP->idx_end(),
-                                     bIdx = bGEP->idx_begin(),
-                                     bEnd = bGEP->idx_end();
-      aIdx != aEnd && bIdx != bEnd;
-      aIdx += (aIdx != aEnd), bIdx += (bIdx != bEnd)) {
-    const SCEV* aSCEV = (aIdx != aEnd)
-        ? SE->getSCEV(*aIdx)
-        : getZeroSCEV(SE);
-    const SCEV* bSCEV = (bIdx != bEnd)
-        ? SE->getSCEV(*bIdx)
-        : getZeroSCEV(SE);
-    opds.push_back(std::make_pair(aSCEV, bSCEV));
-  }
+    // Collect GEP operand pairs (FIXME: use GetGEPOperands from BasicAA), adding
+    // trailing zeroes to the smaller GEP, if needed.
+
+    typedef SmallVector<std::pair<const SCEV*, const SCEV*>, 4> GEPOpdPairsTy;
+    GEPOpdPairsTy opds;
+    const SCEV *SCEV_ZERO = getZeroSCEV(SE);
+    for(GEPOperator::const_op_iterator aIdx = aGEP->idx_begin(),
+        aEnd = aGEP->idx_end(),
+        bIdx = bGEP->idx_begin(),
+        bEnd = bGEP->idx_end();
+        aIdx != aEnd && bIdx != bEnd;
+        aIdx += (aIdx != aEnd), bIdx += (bIdx != bEnd)) {
+        // this process is not going far enough;
+        // it dereferences the GEP operand but then there is a sign extension
+        // in between the load and the GEP operand
+        const Value *aValue = *aIdx;
+        const Value *bValue = *bIdx;
+
+        DEBUG(dbgs() << "aIdx := " << *aValue << "\tType:" << *(aValue->getType()) << "\n");
+        const SCEV* aSCEV = (aIdx != aEnd)
+            ? SE->getSCEV(*aIdx)
+            : SCEV_ZERO;
+        
+        DEBUG(dbgs() << "bIdx := " << *bValue << "\tType:" << *(bValue->getType()) << "\n");
+        const SCEV* bSCEV = (bIdx != bEnd)
+            ? SE->getSCEV(*bIdx)
+            : SCEV_ZERO ;
+        
+        if (bSCEV != SCEV_ZERO) {
+            const Instruction *bInst = dyn_cast<const Instruction>(bValue);
+            bInst->dump();
+            if (this->isMemRefInstr(bValue)) {
+                dbgs() << "bValue is a MemRef Instr\n";
+            } else {
+                bValue = bInst->getOperand(0);
+                bSCEV = SE->getSCEV((Value*)bValue);
+                dbgs() << "bValue is NOT a MemRef Instr, and its Operand[0] := "<< *bValue << "\n";
+            }
+        }
+        
+        DEBUG(dbgs() << "SCEV-A := " << *aSCEV << "\n" << "SCEV-B := " << *bSCEV << "\n");
+        
+        opds.push_back(std::make_pair(aSCEV, bSCEV));
+    }
 
   if (!opds.empty() && opds[0].first != opds[0].second) {
     // We cannot (yet) handle arbitrary GEP pointer offsets. By limiting
@@ -369,14 +448,12 @@ CS551A2::analysePair(DependencePair *P) {
   // Now analyse the collected operand pairs (skipping the GEP ptr offsets).
   for (GEPOpdPairsTy::const_iterator i = opds.begin() + 1, end = opds.end();
        i != end; ++i) {
-    Subscript subscript;
-    DependenceResult result = analyseSubscript(i->first, i->second, &subscript);
+    DependenceResult result = analyseSubscript(i->first, i->second);
     if (result != Dependent) {
       // We either proved independence or failed to analyse this subscript.
       // Further subscripts will not improve the situation, so abort early.
       return result;
     }
-    P->Subscripts.push_back(subscript);
   }
   // We successfully analysed all subscripts but failed to prove independence.
   return Dependent;
@@ -389,13 +466,13 @@ bool CS551A2::depends(Value *A, Value *B) {
   if (!findOrInsertDependencePair(A, B, p)) {
     switch (p->Result = analysePair(p)) {
     case Dependent:
-            errs() << "Dependent\n";
+            errs() << "DPair is Dependent\n";
             break;
     case Independent:
-            errs() << "INDependent\n";
+            errs() << "DPair is IN-dependent\n";
             break;
     case Unknown:
-            errs() << "UNKNOWN\n";
+            errs() << "DPair is UNKNOWN\n";
             break;
     }
   }
@@ -410,7 +487,7 @@ bool CS551A2::runOnLoop(Loop *L, LPPassManager &) {
   this->L = L;
   AA = &getAnalysis<AliasAnalysis>();
   SE = &getAnalysis<ScalarEvolution>();
-    DEBUG(this->dump());
+  DEBUG(this->dump());
   return false;
 }
 
