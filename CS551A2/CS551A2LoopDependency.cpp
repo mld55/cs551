@@ -421,10 +421,10 @@ CS551A2::analysePair(DependencePair *P) {
             continue;
         }
         if (SE->isLoopInvariant(aSCEV, this->L)) {
-            errs() << "Hey, aSCEV is loop-invariant\n";
+            dbgs() << "Hey, aSCEV is loop-invariant\n";
         }
         if (SE->isLoopInvariant(bSCEV, this->L)) {
-            errs() << "Hey, bSCEV is loop-invariant\n";
+            dbgs() << "Hey, bSCEV is loop-invariant\n";
         }
 
         if (bSCEV != SCEV_ZERO) {
@@ -433,55 +433,98 @@ CS551A2::analysePair(DependencePair *P) {
             while (NULL != tmpV) {
                 const Instruction *bI = dyn_cast<const Instruction>(tmpV);
                 if (! bI) {
-                    errs() << "bValue bottomed out on " << *tmpV << "\n";
+                    dbgs() << "bValue bottomed out on " << *tmpV << "\n";
                     break;
                 }
-                errs() << "switching on " << *bI << "\n";
+                dbgs() << "switching on " << *bI << "\n";
 
                 if (const SExtInst *sext = dyn_cast<const SExtInst>(tmpV)) {
-                    errs() << "sign-ext!\n";
+                    dbgs() << "sign-ext!\n";
                     tmpV = sext->getOperand(0);
                 } else if (const AddOperator *addOp = dyn_cast<const AddOperator>(tmpV)) {
                     const Value *op1 = addOp->getOperand(0);
                     const Value *op2 = addOp->getOperand(1);
-                    errs() << "add! OP("<< *op1 << "),OP(" << *op2 << ")\n";
+                    dbgs() << "add! OP("<< *op1 << "),OP(" << *op2 << ")\n";
+
+
+                    if (op1->isDereferenceablePointer()) {
+                        dbgs() << "op1 is dereferencable\n";
+                    }
+                    if (op2->isDereferenceablePointer()) {
+                        dbgs() << "op2 is dereferencable\n";
+                    }
 
                     /// kill the iteration unless we figure something out
                     tmpV = NULL;
-
-                    if (op1->isDereferenceablePointer()) {
-                        errs() << "op1 is dereferencable\n";
-                    }
-                    if (op2->isDereferenceablePointer()) {
-                        errs() << "op2 is dereferencable\n";
-                    }
                     bool nextOp1 = false;
                     bool nextOp2 = false;
                     if (const ConstantExpr *ce = dyn_cast<const ConstantExpr>(op1)) {
-                        errs() << "op1 is constant: " << *ce << "\n";
+                        dbgs() << "op1 is constant: " << *ce << "\n";
+                    } else if (const MulOperator *mulOp = dyn_cast<const MulOperator>(op1)) {
+                        dbgs() << "op1 is a mult" << *mulOp <<"\n";
+                        nextOp1 = true;
                     } else if (const LoadInst *li = dyn_cast<const LoadInst>(op1)) {
-                        errs() << "op1 is loaded" << *li <<"\n";
+                        dbgs() << "op1 is loaded" << *li <<"\n";
                         nextOp1 = true;
                     }
                     if (const ConstantExpr *ce = dyn_cast<const ConstantExpr>(op2)) {
-                        errs() << "op2 is constant: " << *ce << "\n";
+                        dbgs() << "op2 is constant: " << *ce << "\n";
+                    } else if (const MulOperator *mulOp = dyn_cast<const MulOperator>(op2)) {
+                        dbgs() << "op2 is a mult" << *mulOp <<"\n";
+                        nextOp2 = true;
                     } else if (const LoadInst *li = dyn_cast<const LoadInst>(op2)) {
-                        errs() << "op2 is loaded" << *li <<"\n";
+                        dbgs() << "op2 is loaded" << *li <<"\n";
                         nextOp2 = true;
                     }
                     if (nextOp1 && !nextOp2) {
-                        errs() << "Looks like we'll proceed with op1\n";
+                        dbgs() << "Looks like we'll proceed with op1\n";
                         tmpV = op1;
                     } else if (!nextOp1 && nextOp2) {
-                        errs() << "Looks like we'll proceed with op2\n";
+                        dbgs() << "Looks like we'll proceed with op2\n";
+                        tmpV = op2;
+                    }
+                } else if (const MulOperator *mulOp = dyn_cast<const MulOperator>(tmpV)) {
+                    const Value *op1 = mulOp->getOperand(0);
+                    const Value *op2 = mulOp->getOperand(1);
+                    dbgs() << "multiply! OP("<< *op1 << "),OP(" << *op2 << ")\n";
+
+                    /// my kingdom for a lambda here :-(
+
+                    /// kill the iteration unless we figure something out
+                    tmpV = NULL;
+                    bool nextOp1 = false;
+                    bool nextOp2 = false;
+                    if (const ConstantExpr *ce = dyn_cast<const ConstantExpr>(op1)) {
+                        dbgs() << "op1 is constant: " << *ce << "\n";
+                    } else if (const AddOperator *addOp = dyn_cast<const AddOperator>(op1)) {
+                        dbgs() << "op1 is an add" << *addOp <<"\n";
+                        nextOp1 = true;
+                    } else if (const LoadInst *li = dyn_cast<const LoadInst>(op1)) {
+                        dbgs() << "op1 is loaded" << *li <<"\n";
+                        nextOp1 = true;
+                    }
+                    if (const ConstantExpr *ce = dyn_cast<const ConstantExpr>(op2)) {
+                        dbgs() << "op2 is constant: " << *ce << "\n";
+                    } else if (const AddOperator *addOp = dyn_cast<const AddOperator>(op2)) {
+                        dbgs() << "op2 is an add" << *addOp <<"\n";
+                        nextOp2 = true;
+                    } else if (const LoadInst *li = dyn_cast<const LoadInst>(op2)) {
+                        dbgs() << "op2 is loaded" << *li <<"\n";
+                        nextOp2 = true;
+                    }
+                    if (nextOp1 && !nextOp2) {
+                        dbgs() << "Looks like we'll proceed with op1\n";
+                        tmpV = op1;
+                    } else if (!nextOp1 && nextOp2) {
+                        dbgs() << "Looks like we'll proceed with op2\n";
                         tmpV = op2;
                     }
                 } else if (const LoadInst *li = dyn_cast<const LoadInst>(tmpV)) {
                     const Value *theVar = li->getOperand(0);
-                    errs() << "Victory, we hit a memory inst with " << *li << " with variable: "<< *theVar << "\n";
+                    dbgs() << "Victory, we hit a memory inst with " << *li << " with variable: "<< *theVar << "\n";
                     tmpV = NULL;
                 } else {
-                    errs() << "Sorry, I don't know what to make of " << *tmpV << "\n";
+                    dbgs() << "Sorry, I don't know what to make of " << *tmpV << "\n";
                     tmpV = NULL;
                 }
             }
@@ -523,13 +566,13 @@ bool CS551A2::depends(Value *A, Value *B) {
   if (!findOrInsertDependencePair(A, B, p)) {
     switch (p->Result = analysePair(p)) {
     case Dependent:
-            errs() << "DPair is Dependent\n";
+            errs() << "DPair("<< *A <<","<< *B <<") is Dependent\n";
             break;
     case Independent:
-            errs() << "DPair is IN-dependent\n";
+            errs() << "DPair("<< *A <<","<< *B <<") is IN-dependent\n";
             break;
     case Unknown:
-            errs() << "DPair is UNKNOWN\n";
+            errs() << "DPair("<< *A <<","<< *B <<") is UNKNOWN\n";
             break;
     }
   }
