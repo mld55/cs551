@@ -71,25 +71,16 @@ namespace
         /// TODO: doc
         enum DependenceResult { Independent = 0, Dependent = 1, Unknown = 2 };
 
-        struct SillySubscript
-        {
-            /// Is representing the Loop Variable here sufficent:
-            /// no because the aX+b might be important
-            /// how would we represent I+J
-        };
-
         /// DependencePair - Represents a data dependence relation between to memory
         /// reference instructions.
-        struct DependencePair : public FastFoldingSetNode {
+        struct DependencePair : public FastFoldingSetNode
+        {
             Value *A;
             Value *B;
             DependenceResult Result;
-            // SmallVector<Subscript, 4> Subscripts;
-
             DependencePair(const FoldingSetNodeID &ID, Value *a, Value *b)
-            : FastFoldingSetNode(ID), A(a), B(b), Result(Unknown)
-            //, Subscripts()
-            {}
+                : FastFoldingSetNode(ID), A(a), B(b), Result(Unknown)
+                {}
         };
 
         /// findOrInsertDependencePair - Return true if a DependencePair for the
