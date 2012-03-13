@@ -416,19 +416,77 @@ CS551A2::analysePair(DependencePair *P) {
         const SCEV* bSCEV = (bIdx != bEnd)
             ? SE->getSCEV(*bIdx)
             : SCEV_ZERO ;
-        
+        if (aSCEV == SCEV_ZERO && bSCEV == SCEV_ZERO) {
+            DEBUG(dbgs() << "skipping this round because both SCEV are ZERO\n");
+            continue;
+        }
+        if (SE->isLoopInvariant(aSCEV, this->L)) {
+            errs() << "Hey, aSCEV is loop-invariant\n";
+        }
+        if (SE->isLoopInvariant(bSCEV, this->L)) {
+            errs() << "Hey, bSCEV is loop-invariant\n";
+        }
+
         if (bSCEV != SCEV_ZERO) {
-            const Instruction *bInst = dyn_cast<const Instruction>(bValue);
-            bInst->dump();
-            if (this->isMemRefInstr(bValue)) {
-                dbgs() << "bValue is a MemRef Instr\n";
-            } else {
-                bValue = bInst->getOperand(0);
-                bSCEV = SE->getSCEV((Value*)bValue);
-                dbgs() << "bValue is NOT a MemRef Instr, and its Operand[0] := "<< *bValue << "\n";
+            /// use a tmp because we are going to reassign it a lot
+            const Value *tmpV = bValue;
+            while (NULL != tmpV) {
+                const Instruction *bI = dyn_cast<const Instruction>(tmpV);
+                if (! bI) {
+                    errs() << "bValue bottomed out on " << *tmpV << "\n";
+                    break;
+                }
+                errs() << "switching on " << *bI << "\n";
+
+                if (const SExtInst *sext = dyn_cast<const SExtInst>(tmpV)) {
+                    errs() << "sign-ext!\n";
+                    tmpV = sext->getOperand(0);
+                } else if (const AddOperator *addOp = dyn_cast<const AddOperator>(tmpV)) {
+                    const Value *op1 = addOp->getOperand(0);
+                    const Value *op2 = addOp->getOperand(1);
+                    errs() << "add! OP("<< *op1 << "),OP(" << *op2 << ")\n";
+
+                    /// kill the iteration unless we figure something out
+                    tmpV = NULL;
+
+                    if (op1->isDereferenceablePointer()) {
+                        errs() << "op1 is dereferencable\n";
+                    }
+                    if (op2->isDereferenceablePointer()) {
+                        errs() << "op2 is dereferencable\n";
+                    }
+                    bool nextOp1 = false;
+                    bool nextOp2 = false;
+                    if (const ConstantExpr *ce = dyn_cast<const ConstantExpr>(op1)) {
+                        errs() << "op1 is constant: " << *ce << "\n";
+                    } else if (const LoadInst *li = dyn_cast<const LoadInst>(op1)) {
+                        errs() << "op1 is loaded" << *li <<"\n";
+                        nextOp1 = true;
+                    }
+                    if (const ConstantExpr *ce = dyn_cast<const ConstantExpr>(op2)) {
+                        errs() << "op2 is constant: " << *ce << "\n";
+                    } else if (const LoadInst *li = dyn_cast<const LoadInst>(op2)) {
+                        errs() << "op2 is loaded" << *li <<"\n";
+                        nextOp2 = true;
+                    }
+                    if (nextOp1 && !nextOp2) {
+                        errs() << "Looks like we'll proceed with op1\n";
+                        tmpV = op1;
+                    } else if (!nextOp1 && nextOp2) {
+                        errs() << "Looks like we'll proceed with op2\n";
+                        tmpV = op2;
+                    }
+                } else if (const LoadInst *li = dyn_cast<const LoadInst>(tmpV)) {
+                    const Value *theVar = li->getOperand(0);
+                    errs() << "Victory, we hit a memory inst with " << *li << " with variable: "<< *theVar << "\n";
+                    tmpV = NULL;
+                } else {
+                    errs() << "Sorry, I don't know what to make of " << *tmpV << "\n";
+                    tmpV = NULL;
+                }
             }
         }
-        
+
         DEBUG(dbgs() << "SCEV-A := " << *aSCEV << "\n" << "SCEV-B := " << *bSCEV << "\n");
         
         opds.push_back(std::make_pair(aSCEV, bSCEV));
