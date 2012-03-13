@@ -278,8 +278,16 @@ bool CS551A2::isLoopInvariant(const SCEV *S) const {
 }
 
 bool CS551A2::isAffine(const SCEV *S) const {
-  const SCEVAddRecExpr *rec = dyn_cast<SCEVAddRecExpr>(S);
-  return isLoopInvariant(S) || (rec && rec->isAffine());
+    const SCEVAddRecExpr *rec = dyn_cast<SCEVAddRecExpr>(S);
+    bool invar = isLoopInvariant(S);
+    DEBUG(dbgs() << "SCEV[" << *S << "]:isLoopInvariant? " << invar << "\n");
+    bool isAddRecExpr = NULL != rec;
+    DEBUG(dbgs() << "SCEV[" << *S << "]:isAndRecExpr? " << isAddRecExpr << "\n");
+    bool isAffine = (rec && rec->isAffine());
+    DEBUG(dbgs() << "SCEV[" << *S << "]:is SE Affine? " << isAffine << "\n");
+    bool result = (invar || isAffine);
+    DEBUG(dbgs() << "::isAffine(" << *S << ") <- " << result << "\n");
+    return result;
 }
 
 bool CS551A2::isZIVPair(const SCEV *A, const SCEV *B) const {
