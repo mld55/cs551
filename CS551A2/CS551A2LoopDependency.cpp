@@ -66,6 +66,15 @@ namespace
 
     class CS551A2 : public LoopPass
     {
+        struct Affine
+        {
+            /// contains the loop index coefficient, or 1
+            int coefficient;
+            const Value *index;
+            /// contains the constant added to the operand above, or 0
+            int constant;
+        };
+
     public:
         // BEGIN COPY-PASTE {{{
         /// TODO: doc
@@ -100,6 +109,8 @@ namespace
         /// the innermost loop L if it is of the form A+B*X where A, B are invariant
         /// in the loop nest and X is a induction variable in the loop nest.
         bool isAffine(const SCEV*) const;
+
+        Affine* getAffine(const Value *);
 
         /// TODO: doc
         bool isZIVPair(const SCEV*, const SCEV*) const;
@@ -290,6 +301,118 @@ bool CS551A2::isAffine(const SCEV *S) const {
     return result;
 }
 
+CS551A2::Affine*
+CS551A2::getAffine(const Value *V)
+{
+    /// use a tmp because we are going to reassign it a lot
+    const Value *tmpV = V;
+    Affine* result = new Affine;
+    result->coefficient = 1;
+    result->constant = 0;
+    while (NULL != tmpV) {
+        const Instruction *bI = dyn_cast<const Instruction>(tmpV);
+        if (! bI) {
+            dbgs() << "bValue bottomed out on " << *tmpV << "\n";
+            break;
+        }
+        dbgs() << "switching on " << *bI << "\n";
+
+        if (const SExtInst *sext = dyn_cast<const SExtInst>(tmpV)) {
+            dbgs() << "sign-ext!\n";
+            tmpV = sext->getOperand(0);
+        } else if (const AddOperator *addOp = dyn_cast<const AddOperator>(tmpV)) {
+            const Value *op1 = addOp->getOperand(0);
+            const Value *op2 = addOp->getOperand(1);
+            dbgs() << "add! OP("<< *op1 << "),OP(" << *op2 << ")\n";
+
+            /// kill the iteration unless we figure something out
+            tmpV = NULL;
+            bool nextOp1 = false;
+            bool nextOp2 = false;
+            if (const ConstantInt *ci = dyn_cast<const ConstantInt>(op1)) {
+                dbgs() << "op1 is constant: " << *ci << "\n";
+                result->constant = ci->getLimitedValue();
+            } else if (const MulOperator *mulOp = dyn_cast<const MulOperator>(op1)) {
+                dbgs() << "op1 is a mult" << *mulOp <<"\n";
+                nextOp1 = true;
+            } else if (const LoadInst *li = dyn_cast<const LoadInst>(op1)) {
+                dbgs() << "op1 is loaded" << *li <<"\n";
+                nextOp1 = true;
+            }
+            if (const ConstantInt *ci = dyn_cast<const ConstantInt>(op2)) {
+                dbgs() << "op2 is constant: " << *ci << "\n";
+                result->constant = ci->getLimitedValue();
+            } else if (const MulOperator *mulOp = dyn_cast<const MulOperator>(op2)) {
+                dbgs() << "op2 is a mult" << *mulOp <<"\n";
+                nextOp2 = true;
+            } else if (const LoadInst *li = dyn_cast<const LoadInst>(op2)) {
+                dbgs() << "op2 is loaded" << *li <<"\n";
+                nextOp2 = true;
+            }
+            if (nextOp1 && !nextOp2) {
+                dbgs() << "Looks like we'll proceed with op1\n";
+                tmpV = op1;
+            } else if (!nextOp1 && nextOp2) {
+                dbgs() << "Looks like we'll proceed with op2\n";
+                tmpV = op2;
+            }
+        } else if (const MulOperator *mulOp = dyn_cast<const MulOperator>(tmpV)) {
+            const Value *op1 = mulOp->getOperand(0);
+            const Value *op2 = mulOp->getOperand(1);
+            dbgs() << "multiply! OP("<< *op1 << "),OP(" << *op2 << ")\n";
+
+            /// my kingdom for a lambda here :-(
+
+            /// kill the iteration unless we figure something out
+            tmpV = NULL;
+            bool nextOp1 = false;
+            bool nextOp2 = false;
+            if (const ConstantInt *ci = dyn_cast<const ConstantInt>(op1)) {
+                dbgs() << "op1 is constant: " << *ci << "\n";
+                result->coefficient = ci->getLimitedValue();
+            } else if (const AddOperator *addOp = dyn_cast<const AddOperator>(op1)) {
+                dbgs() << "op1 is an add" << *addOp <<"\n";
+                nextOp1 = true;
+            } else if (const LoadInst *li = dyn_cast<const LoadInst>(op1)) {
+                dbgs() << "op1 is loaded" << *li <<"\n";
+                nextOp1 = true;
+            }
+            if (const ConstantInt *ci = dyn_cast<const ConstantInt>(op2)) {
+                dbgs() << "op2 is constant: " << *ci << "\n";
+                result->coefficient = ci->getLimitedValue();
+            } else if (const AddOperator *addOp = dyn_cast<const AddOperator>(op2)) {
+                dbgs() << "op2 is an add" << *addOp <<"\n";
+                nextOp2 = true;
+            } else if (const LoadInst *li = dyn_cast<const LoadInst>(op2)) {
+                dbgs() << "op2 is loaded" << *li <<"\n";
+                nextOp2 = true;
+            }
+            if (nextOp1 && !nextOp2) {
+                dbgs() << "Looks like we'll proceed with op1\n";
+                tmpV = op1;
+            } else if (!nextOp1 && nextOp2) {
+                dbgs() << "Looks like we'll proceed with op2\n";
+                tmpV = op2;
+            }
+        } else if (const LoadInst *li = dyn_cast<const LoadInst>(tmpV)) {
+            const Value *theVar = li->getOperand(0);
+            dbgs() << "Victory, we hit a memory inst with " << *li
+                << " with variable: "<< *theVar << "\n";
+            result->index = theVar;
+            tmpV = NULL;
+        } else {
+            dbgs() << "Sorry, I don't know what to make of " << *tmpV << "\n";
+            tmpV = NULL;
+        }
+    }
+    if (result->index) {
+        return result;
+    } else {
+        /// we didn't find an index variable, so not affine
+        return NULL;
+    }
+}
+
 bool CS551A2::isZIVPair(const SCEV *A, const SCEV *B) const {
     DEBUG(dbgs() << "isZIVPair(" << *A << "," << *B << ") ...\n");
     bool result;
@@ -427,106 +550,20 @@ CS551A2::analysePair(DependencePair *P) {
             dbgs() << "Hey, bSCEV is loop-invariant\n";
         }
 
+        if (aSCEV != SCEV_ZERO) {
+            if (Affine *aff = getAffine(aValue)) {
+                dbgs() << "Successfully affined aValue := "
+                << aff->coefficient
+                << aff->index->getName()
+                << "+" << aff->constant << "\n";
+            }
+        }
         if (bSCEV != SCEV_ZERO) {
-            /// use a tmp because we are going to reassign it a lot
-            const Value *tmpV = bValue;
-            while (NULL != tmpV) {
-                const Instruction *bI = dyn_cast<const Instruction>(tmpV);
-                if (! bI) {
-                    dbgs() << "bValue bottomed out on " << *tmpV << "\n";
-                    break;
-                }
-                dbgs() << "switching on " << *bI << "\n";
-
-                if (const SExtInst *sext = dyn_cast<const SExtInst>(tmpV)) {
-                    dbgs() << "sign-ext!\n";
-                    tmpV = sext->getOperand(0);
-                } else if (const AddOperator *addOp = dyn_cast<const AddOperator>(tmpV)) {
-                    const Value *op1 = addOp->getOperand(0);
-                    const Value *op2 = addOp->getOperand(1);
-                    dbgs() << "add! OP("<< *op1 << "),OP(" << *op2 << ")\n";
-
-
-                    if (op1->isDereferenceablePointer()) {
-                        dbgs() << "op1 is dereferencable\n";
-                    }
-                    if (op2->isDereferenceablePointer()) {
-                        dbgs() << "op2 is dereferencable\n";
-                    }
-
-                    /// kill the iteration unless we figure something out
-                    tmpV = NULL;
-                    bool nextOp1 = false;
-                    bool nextOp2 = false;
-                    if (const ConstantExpr *ce = dyn_cast<const ConstantExpr>(op1)) {
-                        dbgs() << "op1 is constant: " << *ce << "\n";
-                    } else if (const MulOperator *mulOp = dyn_cast<const MulOperator>(op1)) {
-                        dbgs() << "op1 is a mult" << *mulOp <<"\n";
-                        nextOp1 = true;
-                    } else if (const LoadInst *li = dyn_cast<const LoadInst>(op1)) {
-                        dbgs() << "op1 is loaded" << *li <<"\n";
-                        nextOp1 = true;
-                    }
-                    if (const ConstantExpr *ce = dyn_cast<const ConstantExpr>(op2)) {
-                        dbgs() << "op2 is constant: " << *ce << "\n";
-                    } else if (const MulOperator *mulOp = dyn_cast<const MulOperator>(op2)) {
-                        dbgs() << "op2 is a mult" << *mulOp <<"\n";
-                        nextOp2 = true;
-                    } else if (const LoadInst *li = dyn_cast<const LoadInst>(op2)) {
-                        dbgs() << "op2 is loaded" << *li <<"\n";
-                        nextOp2 = true;
-                    }
-                    if (nextOp1 && !nextOp2) {
-                        dbgs() << "Looks like we'll proceed with op1\n";
-                        tmpV = op1;
-                    } else if (!nextOp1 && nextOp2) {
-                        dbgs() << "Looks like we'll proceed with op2\n";
-                        tmpV = op2;
-                    }
-                } else if (const MulOperator *mulOp = dyn_cast<const MulOperator>(tmpV)) {
-                    const Value *op1 = mulOp->getOperand(0);
-                    const Value *op2 = mulOp->getOperand(1);
-                    dbgs() << "multiply! OP("<< *op1 << "),OP(" << *op2 << ")\n";
-
-                    /// my kingdom for a lambda here :-(
-
-                    /// kill the iteration unless we figure something out
-                    tmpV = NULL;
-                    bool nextOp1 = false;
-                    bool nextOp2 = false;
-                    if (const ConstantExpr *ce = dyn_cast<const ConstantExpr>(op1)) {
-                        dbgs() << "op1 is constant: " << *ce << "\n";
-                    } else if (const AddOperator *addOp = dyn_cast<const AddOperator>(op1)) {
-                        dbgs() << "op1 is an add" << *addOp <<"\n";
-                        nextOp1 = true;
-                    } else if (const LoadInst *li = dyn_cast<const LoadInst>(op1)) {
-                        dbgs() << "op1 is loaded" << *li <<"\n";
-                        nextOp1 = true;
-                    }
-                    if (const ConstantExpr *ce = dyn_cast<const ConstantExpr>(op2)) {
-                        dbgs() << "op2 is constant: " << *ce << "\n";
-                    } else if (const AddOperator *addOp = dyn_cast<const AddOperator>(op2)) {
-                        dbgs() << "op2 is an add" << *addOp <<"\n";
-                        nextOp2 = true;
-                    } else if (const LoadInst *li = dyn_cast<const LoadInst>(op2)) {
-                        dbgs() << "op2 is loaded" << *li <<"\n";
-                        nextOp2 = true;
-                    }
-                    if (nextOp1 && !nextOp2) {
-                        dbgs() << "Looks like we'll proceed with op1\n";
-                        tmpV = op1;
-                    } else if (!nextOp1 && nextOp2) {
-                        dbgs() << "Looks like we'll proceed with op2\n";
-                        tmpV = op2;
-                    }
-                } else if (const LoadInst *li = dyn_cast<const LoadInst>(tmpV)) {
-                    const Value *theVar = li->getOperand(0);
-                    dbgs() << "Victory, we hit a memory inst with " << *li << " with variable: "<< *theVar << "\n";
-                    tmpV = NULL;
-                } else {
-                    dbgs() << "Sorry, I don't know what to make of " << *tmpV << "\n";
-                    tmpV = NULL;
-                }
+            if (Affine *aff = getAffine(bValue)) {
+                dbgs() << "Successfully affined bValue := "
+                    << aff->coefficient
+                    << aff->index->getName()
+                    << "+" << aff->constant << "\n";
             }
         }
 
