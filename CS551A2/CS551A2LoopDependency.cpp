@@ -32,13 +32,9 @@ using namespace llvm;
 
 namespace
 {
+/*
     class Assignment2
     {
-        struct Subscript
-        {
-            Value* A;
-            Value* B;
-        };
         enum DirectionType {    
             LT, EQ, GT, STAR
         };
@@ -63,9 +59,10 @@ namespace
                         std::vector<DirectionV*> *DVset,
                         std::vector<DistanceV*> *dVset);
     };
-
+*/
     class CS551A2 : public LoopPass
     {
+    public:
         struct Affine
         {
             /// contains the loop index coefficient, or 1
@@ -73,6 +70,11 @@ namespace
             const Value *index;
             /// contains the constant added to the operand above, or 0
             int constant;
+        };
+        struct Subscript
+        {
+            const Affine *A;
+            const Affine *B;
         };
 
     public:
@@ -312,7 +314,7 @@ CS551A2::getAffine(const Value *V)
     while (NULL != tmpV) {
         const Instruction *bI = dyn_cast<const Instruction>(tmpV);
         if (! bI) {
-            dbgs() << "bValue bottomed out on " << *tmpV << "\n";
+            dbgs() << "getAffine bottomed out on " << *tmpV << "\n";
             break;
         }
         dbgs() << "switching on " << *bI << "\n";
@@ -397,7 +399,7 @@ CS551A2::getAffine(const Value *V)
         } else if (const LoadInst *li = dyn_cast<const LoadInst>(tmpV)) {
             const Value *theVar = li->getOperand(0);
             dbgs() << "Victory, we hit a memory inst with " << *li
-                << " with variable: "<< *theVar << "\n";
+                << " with variable: "<< *theVar << "\n\n";
             result->index = theVar;
             tmpV = NULL;
         } else {
@@ -471,6 +473,16 @@ CS551A2::analyseSubscript(const SCEV *A, const SCEV *B) const {
   return analyseMIV(A, B);
 }
 
+static bool isStrongSIV(CS551A2::Subscript *S)
+{
+    if (S->A->index != S->B->index) {
+        dbgs() << "Not Strong due to differing indices\n";
+        return false;
+    }
+    bool result = S->A->coefficient == S->B->coefficient;
+    return result;
+}
+
 CS551A2::DependenceResult
 CS551A2::analysePair(DependencePair *P) {
   DEBUG(dbgs() << "Analysing:\n" << *P->A << "\n" << *P->B << "\n");
@@ -515,18 +527,15 @@ CS551A2::analysePair(DependencePair *P) {
     // Collect GEP operand pairs (FIXME: use GetGEPOperands from BasicAA), adding
     // trailing zeroes to the smaller GEP, if needed.
 
-    typedef SmallVector<std::pair<const SCEV*, const SCEV*>, 4> GEPOpdPairsTy;
-    GEPOpdPairsTy opds;
     const SCEV *SCEV_ZERO = getZeroSCEV(SE);
+
     for(GEPOperator::const_op_iterator aIdx = aGEP->idx_begin(),
         aEnd = aGEP->idx_end(),
         bIdx = bGEP->idx_begin(),
         bEnd = bGEP->idx_end();
         aIdx != aEnd && bIdx != bEnd;
-        aIdx += (aIdx != aEnd), bIdx += (bIdx != bEnd)) {
-        // this process is not going far enough;
-        // it dereferences the GEP operand but then there is a sign extension
-        // in between the load and the GEP operand
+        aIdx += (aIdx != aEnd), bIdx += (bIdx != bEnd))
+    {
         const Value *aValue = *aIdx;
         const Value *bValue = *bIdx;
 
@@ -543,6 +552,7 @@ CS551A2::analysePair(DependencePair *P) {
             DEBUG(dbgs() << "skipping this round because both SCEV are ZERO\n");
             continue;
         }
+        DEBUG(dbgs() << "SCEV-A := " << *aSCEV << "\n" << "SCEV-B := " << *bSCEV << "\n");
         if (SE->isLoopInvariant(aSCEV, this->L)) {
             dbgs() << "Hey, aSCEV is loop-invariant\n";
         }
@@ -550,50 +560,45 @@ CS551A2::analysePair(DependencePair *P) {
             dbgs() << "Hey, bSCEV is loop-invariant\n";
         }
 
+        const Affine *aAffine;
+        const Affine *bAffine;
         if (aSCEV != SCEV_ZERO) {
-            if (Affine *aff = getAffine(aValue)) {
+            if ((aAffine = getAffine(aValue))) {
                 dbgs() << "Successfully affined aValue := "
-                << aff->coefficient
-                << aff->index->getName()
-                << "+" << aff->constant << "\n";
+                << aAffine->coefficient
+                << aAffine->index->getName()
+                << "+" << aAffine->constant << "\n";
             }
         }
         if (bSCEV != SCEV_ZERO) {
-            if (Affine *aff = getAffine(bValue)) {
+            if ((bAffine = getAffine(bValue))) {
                 dbgs() << "Successfully affined bValue := "
-                    << aff->coefficient
-                    << aff->index->getName()
-                    << "+" << aff->constant << "\n";
+                << bAffine->coefficient
+                << bAffine->index->getName()
+                << "+" << bAffine->constant << "\n";
             }
         }
 
-        DEBUG(dbgs() << "SCEV-A := " << *aSCEV << "\n" << "SCEV-B := " << *bSCEV << "\n");
-        
-        opds.push_back(std::make_pair(aSCEV, bSCEV));
+        Subscript *sub;
+        if (aAffine && bAffine) {
+            sub = new Subscript;
+            sub->A = aAffine;
+            sub->B = bAffine;
+            if (sub->A->index == sub->B->index) {
+                dbgs() << "Delta(" << sub->A->index->getName()
+                    << ")="
+                    << (sub->B->constant - sub->A->constant)
+                    << "\n";
+                dbgs() << "Strong? " << ::isStrongSIV(sub) << "\n";
+                return Dependent;
+            } else {
+                return Independent;
+            }
+        }
     }
 
-  if (!opds.empty() && opds[0].first != opds[0].second) {
-    // We cannot (yet) handle arbitrary GEP pointer offsets. By limiting
-    //
-    // TODO: this could be relaxed by adding the size of the underlying object
-    // to the first subscript. If we have e.g. (GEP x,0,i; GEP x,2,-i) and we
-    // know that x is a [100 x i8]*, we could modify the first subscript to be
-    // (i, 200-i) instead of (i, -i).
-    return Unknown;
-  }
-
-  // Now analyse the collected operand pairs (skipping the GEP ptr offsets).
-  for (GEPOpdPairsTy::const_iterator i = opds.begin() + 1, end = opds.end();
-       i != end; ++i) {
-    DependenceResult result = analyseSubscript(i->first, i->second);
-    if (result != Dependent) {
-      // We either proved independence or failed to analyse this subscript.
-      // Further subscripts will not improve the situation, so abort early.
-      return result;
-    }
-  }
-  // We successfully analysed all subscripts but failed to prove independence.
-  return Dependent;
+    // We successfully analysed all subscripts but failed to prove independence.
+    return Dependent;
 }
 
 bool CS551A2::depends(Value *A, Value *B) {
