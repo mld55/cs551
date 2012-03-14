@@ -476,12 +476,40 @@ CS551A2::analyseSubscript(const SCEV *A, const SCEV *B) const {
 static bool isStrongSIV(CS551A2::Subscript *S)
 {
     if (S->A->index != S->B->index) {
-        dbgs() << "Not Strong due to differing indices\n";
+        dbgs() << "Not SIV due to differing indices\n";
         return false;
     }
     bool result = S->A->coefficient == S->B->coefficient;
     return result;
 }
+
+/// This *might* be safe to just implement as !isStrong(S)
+static bool isWeakSIV(CS551A2::Subscript *S)
+{
+    if (S->A->index != S->B->index) {
+        dbgs() << "Not SIV due to differing indices\n";
+        return false;
+    }
+    bool result = S->A->coefficient != S->B->coefficient;
+    return result;
+}
+
+/*
+/// This makes no sense, given that a zero-coefficient
+/// means it is just "+C" and thus doesn't
+/// fit into our model of Affine
+static bool isWeakZeroSIV(CS551A2::Subscript *S)
+{
+    if (S->A->index != S->B->index) {
+        dbgs() << "Not SIV due to differing indices\n";
+        return false;
+    }
+    bool result =
+        (S->A->coefficient != 0 && 0 == S->B->coefficient) ||
+        (S->A->coefficient == 0 && 0 != S->B->coefficient);
+    return result;
+}
+*/
 
 CS551A2::DependenceResult
 CS551A2::analysePair(DependencePair *P) {
@@ -590,6 +618,7 @@ CS551A2::analysePair(DependencePair *P) {
                     << (sub->B->constant - sub->A->constant)
                     << "\n";
                 dbgs() << "Strong? " << ::isStrongSIV(sub) << "\n";
+                dbgs() << "Weak? " << ::isWeakSIV(sub) << "\n";
                 return Dependent;
             } else {
                 return Independent;
