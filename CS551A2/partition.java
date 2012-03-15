@@ -110,13 +110,15 @@ public class partition
 
     static class Subscript
     {
-        public Subscript(String[] indexes, IndexEntry lhs, IndexEntry rhs) {
+        public Subscript(int position, String[] indexes,
+                IndexEntry lhs, IndexEntry rhs) {
             if (null != lhs.indexes && null != rhs.indexes) {
                 if (lhs.indexes.length != rhs.indexes.length) {
                     throw new IllegalArgumentException(
                             "Index Entry indexes must have equal lengths");
                 }
             }
+            this.position = position;
             this.indexes = indexes;
             this.lhs = lhs;
             this.rhs = rhs;
@@ -188,39 +190,64 @@ public class partition
         public List<DependencyDirection> getDirectionVector() {
             final List<DependencyDirection> results
                 = new ArrayList<DependencyDirection>(indexes.length);
+            final List<Integer> dist = getDistanceVector();
+            for (final Integer i : dist) {
+                if (null == i) {
+                    results.add( DependencyDirection.STAR );
+                } else {
+                    if (i > 0) {
+                        results.add( DependencyDirection.LT );
+                    } else if (i < 0) {
+                        results.add( DependencyDirection.GT );
+                    } else if (i == 0) {
+                        results.add( DependencyDirection.EQ );
+                    } else {
+                        throw new RuntimeException(
+                                "Strange Integer: "+i);
+                    }
+                }
+            }
+            return results;
+        }
+
+        /**
+         * Computes the distance between the left-hand side
+         * and the right-hand side.
+         * This needs to be a list of Integer because in
+         * the "star" case it will return a null distance.
+         */
+        public List<Integer> getDistanceVector() {
+            final List<Integer> results
+                = new ArrayList<Integer>( indexes.length );
             for (int i = 0; i < indexes.length; i++) {
                 final String idx = indexes[i];
                 if (!( lhs.hasIndex(idx) && rhs.hasIndex(idx))) {
-                    results.add( DependencyDirection.STAR );
+                    results.add( null );
                     continue;
                 }
+                /*
+                 * I actually was just guessing about this;
+                 * so let's leave it until I find the actual formula
                 int l_coeff = lhs.getCoefficient(i);
                 int r_coeff = rhs.getCoefficient(i);
-                DependencyDirection dd;
                 if (l_coeff < r_coeff) {
                     dd = DependencyDirection.GT;
                 } else if (r_coeff > r_coeff) {
                     dd = DependencyDirection.LT;
                 } else {
                     // co-eff is equal
-                    if (lhs.constant < rhs.constant) {
-                        dd = DependencyDirection.GT;
-                    } else if (lhs.constant > rhs.constant) {
-                        dd = DependencyDirection.LT;
-                    } else { // if (lhs.constant == rhs.constant) {
-                        dd = DependencyDirection.EQ;
-                    }
-                }
-                results.add( dd );
+                */
+                results.add( lhs.constant - rhs.constant );
             }
             return results;
         }
 
+        int position;
         String[] indexes;
         IndexEntry lhs;
         IndexEntry rhs;
         @Override public String toString() {
-            return String.format("Subscript<%s, %s>", lhs, rhs);
+            return String.format("Subscript[%d]<%s, %s>", position, lhs, rhs);
         }
     }
 
@@ -266,49 +293,80 @@ public class partition
     }
 
     public static void main(String[] args) throws Exception {
-        final List<List<Subscript>> partitions
-            = new ArrayList<List<Subscript>>();
-/*
+        //test1();
+        test2();
+        test3();
+    }
+    public static void test1() {
         // A[I+1][I][K][5] = A[I][J][K][8]
         final String[] indexes = { "I","J","K" };
-        Subscript s0 = new Subscript( indexes,
+        int i = 0;
+        Subscript s0 = new Subscript( i++, indexes,
             new IndexEntry(new int[] { 2, 0, 0 }, indexes, 1),
             new IndexEntry(new int[] { 0, 0, 0 }, indexes, 1));
-        Subscript s1 = new Subscript( indexes,
+        Subscript s1 = new Subscript( i++, indexes,
             new IndexEntry(new int[] { 1, 0, 0 }, indexes, 0),
             new IndexEntry(new int[] { 0, 1, 0 }, indexes, 0));
-        Subscript s2 = new Subscript( indexes,
+        Subscript s2 = new Subscript( i++, indexes,
             new IndexEntry(new int[] { 0, 0, 1 }, indexes, 0),
             new IndexEntry(new int[] { 0, 0, 1 }, indexes, 0));
-        Subscript s3 = new Subscript( indexes,
+        Subscript s3 = new Subscript( i++, indexes,
             new IndexEntry(new int[] { 0, 0, 0 }, indexes, 5),
             new IndexEntry(new int[] { 0, 0, 0 }, indexes, 8));
-*/
-/*
+        runSubscripts( Arrays.asList( s0, s1, s2, s3 ) );
+    }
+
+    public static void test2() {
         // A[i+1][i] = A[i][i+1]
         final String[] indexes = { "I" };
-        Subscript s0 = new Subscript( indexes,
+        int i = 0;
+        Subscript s0 = new Subscript( i++, indexes,
                 new IndexEntry(new int[] { 1 }, indexes, 1),
                 new IndexEntry(new int[] { 1 }, indexes, 0));
-        Subscript s1 = new Subscript( indexes,
+        Subscript s1 = new Subscript( i++, indexes,
                 new IndexEntry(new int[] { 1 }, indexes, 0),
                 new IndexEntry(new int[] { 1 }, indexes, 1));
-*/
+        runSubscripts( Arrays.asList( s0, s1 ) );
+    }
+
+    public static void test3() {
         // A[i+1][i+2] = A[i][i]
         final String[] indexes = { "I" };
-        Subscript s0 = new Subscript( indexes,
+        int i = 0;
+        Subscript s0 = new Subscript( i++, indexes,
                 new IndexEntry(new int[] { 1 }, indexes, 1),
                 new IndexEntry(new int[] { 1 }, indexes, 0));
-        Subscript s1 = new Subscript( indexes,
+        Subscript s1 = new Subscript( i++, indexes,
                 new IndexEntry(new int[] { 1 }, indexes, 2),
                 new IndexEntry(new int[] { 1 }, indexes, 0));
+        runSubscripts( Arrays.asList( s0, s1 ) );
+    }
 
-        final List<Subscript> subs = Arrays.asList( s0, s1 );
+    public static void runSubscripts(List<Subscript> subs) {
+        final List<List<Subscript>> partitions
+            = new ArrayList<List<Subscript>>();
+        final String[] indexes = subs.get(0).indexes;
         System.out.println("Subs := "+subs);
         partition( subs, partitions, indexes );
         System.out.println("PART := "+partitions);
         for (final List<Subscript> part : partitions) {
             System.out.println("--PART");
+            java.util.Collections.sort(part,
+                    new java.util.Comparator<Subscript>() {
+                        public int compare(Subscript a, Subscript b) {
+                            if (a.position < b.position) {
+                                return -1;
+                            } else if (a.position > b.position) {
+                                return 1;
+                            } else {
+                                return 0;
+                            }
+                        }
+                        public boolean equals(Object o) {
+                            // we are an anonymous comparator, no one equals us
+                            return false;
+                        }
+                    });
             for (final Subscript sub : part) {
                 System.out.println("SUB="+sub);
                 System.out.println("\tZIV? "+sub.isZIV());
@@ -317,6 +375,7 @@ public class partition
                 System.out.println("\t\tWeak-SIV? "+sub.isWeakSIV());
                 System.out.println("\t\tWeakZero-SIV? "+sub.isWeakZeroSIV());
                 System.out.println("\tMIV? "+sub.isMIV());
+                System.out.println("\tDIST="+sub.getDistanceVector());
                 System.out.println("\tDIR="+sub.getDirectionVector());
             }
         }
