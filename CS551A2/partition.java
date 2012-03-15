@@ -3,10 +3,14 @@ import java.util.List;
 
 public class partition
 {
+    enum DependencyDirection
+    {
+        LT, EQ, GT, STAR
+    }
     static class IndexEntry
     {
         public IndexEntry(int[] co, String[] indexes, int constant) {
-            if (co != null && indexes != null 
+            if (co != null && indexes != null
                     && co.length != indexes.length) {
                 throw new IllegalArgumentException(
 "You must provide coefficients for all your indexes, even if 0 or 1");
@@ -15,7 +19,7 @@ public class partition
             this.indexes = indexes;
             this.constant = constant;
         }
-        /** 
+        /**
          * Contains the coefficient before the index variable, or 1 if
          * does not have one.  Please note this can be zero, if an
          * index variable does not appear in this index entry.
@@ -77,7 +81,7 @@ public class partition
                         sb.append(",");
                     }
                     if (1 == coeff) {
-                        // don't print anything, otherwise it'll be "1I+1" 
+                        // don't print anything, otherwise it'll be "1I+1"
                         // which looks horrible
                     } else {
                         sb.append(coeff);
@@ -97,19 +101,120 @@ public class partition
 
     static class Subscript
     {
-        public Subscript(IndexEntry lhs, IndexEntry rhs) {
+        public Subscript(String[] indexes, IndexEntry lhs, IndexEntry rhs) {
+            if (null != lhs.indexes && null != rhs.indexes) {
+                if (lhs.indexes.length != rhs.indexes.length) {
+                    throw new IllegalArgumentException(
+                            "Index Entry indexes must have equal lengths");
+                }
+            }
+            this.indexes = indexes;
             this.lhs = lhs;
             this.rhs = rhs;
         }
+
         public boolean hasIndex(String idx) {
             return lhs.hasIndex(idx) || rhs.hasIndex(idx);
         }
+
+        public int getIndexCount() {
+            int count = 0;
+            for (String i : indexes) {
+                if (lhs.hasIndex(i) || rhs.hasIndex(i)) {
+                    count++;
+                }
+            }
+            return count;
+        }
+
+        public boolean isZIV() {
+            return 0 == getIndexCount();
+        }
+
+        public boolean isSIV() {
+            return 1 == getIndexCount();
+        }
+
+        public boolean isMIV() {
+            return 1 < getIndexCount();
+        }
+
+        public boolean isStrongSIV() {
+            if (! isSIV() ) return false;
+            for (int i = 0; i < indexes.length; i++) {
+                final String idx = indexes[i];
+                if (lhs.hasIndex(idx)) {
+                    return lhs.getCoefficient(i) ==
+                        rhs.getCoefficient(i);
+                }
+            }
+            return false;
+        }
+
+        public boolean isWeakSIV() {
+            if (! isSIV() ) return false;
+            for (int i = 0; i < indexes.length; i++) {
+                final String idx = indexes[i];
+                // the fact that it *has* the co-eff implies it is non-zero
+                if (lhs.hasIndex(idx)) {
+                    return lhs.getCoefficient(i) != rhs.getCoefficient(i);
+                }
+            }
+            return false;
+        }
+
+        public boolean isWeakZeroSIV() {
+            if (! isSIV() ) return false;
+            for (int i = 0; i < indexes.length; i++) {
+                final String idx = indexes[i];
+                if (lhs.hasIndex(idx)) {
+                    return !rhs.hasIndex(idx);
+                } else if (rhs.hasIndex(idx)) {
+                    return !lhs.hasIndex(idx);
+                }
+            }
+            return false;
+        }
+
+        public List<DependencyDirection> getDirectionVector() {
+            final List<DependencyDirection> results
+                = new ArrayList<DependencyDirection>(indexes.length);
+            for (int i = 0; i < indexes.length; i++) {
+                final String idx = indexes[i];
+                if (!( lhs.hasIndex(idx) && rhs.hasIndex(idx))) {
+                    results.add( DependencyDirection.STAR );
+                    continue;
+                }
+                int l_coeff = lhs.getCoefficient(i);
+                int r_coeff = rhs.getCoefficient(i);
+                DependencyDirection dd;
+                if (l_coeff < r_coeff) {
+                    dd = DependencyDirection.GT;
+                } else if (r_coeff > r_coeff) {
+                    dd = DependencyDirection.LT;
+                } else {
+                    // co-eff is equal
+                    if (lhs.constant < rhs.constant) {
+                        dd = DependencyDirection.GT;
+                    } else if (lhs.constant > rhs.constant) {
+                        dd = DependencyDirection.LT;
+                    } else { // if (lhs.constant == rhs.constant) {
+                        dd = DependencyDirection.EQ;
+                    }
+                }
+                results.add( dd );
+            }
+            return results;
+        }
+
+        String[] indexes;
         IndexEntry lhs;
         IndexEntry rhs;
         @Override public String toString() {
             return String.format("Subscript<%s, %s>", lhs, rhs);
         }
     }
+
     /**
      * Partitions the provided Subscripts into coupled and non-coupled lists.
      * @param subs the list of subscripts to partition
@@ -152,26 +257,43 @@ public class partition
     }
 
     public static void main(String[] args) throws Exception {
-        // A[I+1][I][K] = A[I][J][K]
+        // A[I+1][I][K][5] = A[I][J][K][8]
         final String[] indexes = { "I","J","K" };
         final List<List<Subscript>> partitions
             = new ArrayList<List<Subscript>>();
-        Subscript s0 = new Subscript(
-new IndexEntry(new int[] { 1, 0, 0 }, indexes, 1),
-new IndexEntry(new int[] { 1, 0, 0 }, indexes, 0));
-        Subscript s1 = new Subscript(
+        Subscript s0 = new Subscript( indexes,
+new IndexEntry(new int[] { 2, 0, 0 }, indexes, 1),
+new IndexEntry(new int[] { 0, 0, 0 }, indexes, 1));
+        Subscript s1 = new Subscript( indexes,
 new IndexEntry(new int[] { 1, 0, 0 }, indexes, 0),
 new IndexEntry(new int[] { 0, 1, 0 }, indexes, 0));
-        Subscript s2 = new Subscript(
+        Subscript s2 = new Subscript( indexes,
 new IndexEntry(new int[] { 0, 0, 1 }, indexes, 0),
 new IndexEntry(new int[] { 0, 0, 1 }, indexes, 0));
+        Subscript s3 = new Subscript( indexes,
+new IndexEntry(new int[] { 0, 0, 0 }, indexes, 5),
+new IndexEntry(new int[] { 0, 0, 0 }, indexes, 8));
         final List<Subscript> subs
             = new ArrayList<Subscript>(3);
         subs.add( s0 );
         subs.add( s1 );
         subs.add( s2 );
+        subs.add( s3 );
         System.out.println("Subs := "+subs);
         partition( subs, partitions, indexes );
         System.out.println("PART := "+partitions);
+        for (final List<Subscript> part : partitions) {
+            System.out.println("--PART");
+            for (final Subscript sub : part) {
+                System.out.println("SUB="+sub);
+                System.out.println("\tZIV? "+sub.isZIV());
+                System.out.println("\tSIV? "+sub.isSIV());
+                System.out.println("\t\tStrong-SIV? "+sub.isStrongSIV());
+                System.out.println("\t\tWeak-SIV? "+sub.isWeakSIV());
+                System.out.println("\t\tWeakZero-SIV? "+sub.isWeakZeroSIV());
+                System.out.println("\tMIV? "+sub.isMIV());
+                System.out.println("\tDIR="+sub.getDirectionVector());
+            }
+        }
     }
 }
