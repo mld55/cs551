@@ -1,11 +1,20 @@
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 
 public class partition
 {
     enum DependencyDirection
     {
-        LT, EQ, GT, STAR
+        LT("<"), EQ("="), GT(">"), STAR("*");
+        private DependencyDirection(String str) {
+            this.str = str;
+        }
+        @Override
+        public String toString() {
+            return str;
+        }
+        private String str;
     }
     static class IndexEntry
     {
@@ -257,28 +266,44 @@ public class partition
     }
 
     public static void main(String[] args) throws Exception {
-        // A[I+1][I][K][5] = A[I][J][K][8]
-        final String[] indexes = { "I","J","K" };
         final List<List<Subscript>> partitions
             = new ArrayList<List<Subscript>>();
+/*
+        // A[I+1][I][K][5] = A[I][J][K][8]
+        final String[] indexes = { "I","J","K" };
         Subscript s0 = new Subscript( indexes,
-new IndexEntry(new int[] { 2, 0, 0 }, indexes, 1),
-new IndexEntry(new int[] { 0, 0, 0 }, indexes, 1));
+            new IndexEntry(new int[] { 2, 0, 0 }, indexes, 1),
+            new IndexEntry(new int[] { 0, 0, 0 }, indexes, 1));
         Subscript s1 = new Subscript( indexes,
-new IndexEntry(new int[] { 1, 0, 0 }, indexes, 0),
-new IndexEntry(new int[] { 0, 1, 0 }, indexes, 0));
+            new IndexEntry(new int[] { 1, 0, 0 }, indexes, 0),
+            new IndexEntry(new int[] { 0, 1, 0 }, indexes, 0));
         Subscript s2 = new Subscript( indexes,
-new IndexEntry(new int[] { 0, 0, 1 }, indexes, 0),
-new IndexEntry(new int[] { 0, 0, 1 }, indexes, 0));
+            new IndexEntry(new int[] { 0, 0, 1 }, indexes, 0),
+            new IndexEntry(new int[] { 0, 0, 1 }, indexes, 0));
         Subscript s3 = new Subscript( indexes,
-new IndexEntry(new int[] { 0, 0, 0 }, indexes, 5),
-new IndexEntry(new int[] { 0, 0, 0 }, indexes, 8));
-        final List<Subscript> subs
-            = new ArrayList<Subscript>(3);
-        subs.add( s0 );
-        subs.add( s1 );
-        subs.add( s2 );
-        subs.add( s3 );
+            new IndexEntry(new int[] { 0, 0, 0 }, indexes, 5),
+            new IndexEntry(new int[] { 0, 0, 0 }, indexes, 8));
+*/
+/*
+        // A[i+1][i] = A[i][i+1]
+        final String[] indexes = { "I" };
+        Subscript s0 = new Subscript( indexes,
+                new IndexEntry(new int[] { 1 }, indexes, 1),
+                new IndexEntry(new int[] { 1 }, indexes, 0));
+        Subscript s1 = new Subscript( indexes,
+                new IndexEntry(new int[] { 1 }, indexes, 0),
+                new IndexEntry(new int[] { 1 }, indexes, 1));
+*/
+        // A[i+1][i+2] = A[i][i]
+        final String[] indexes = { "I" };
+        Subscript s0 = new Subscript( indexes,
+                new IndexEntry(new int[] { 1 }, indexes, 1),
+                new IndexEntry(new int[] { 1 }, indexes, 0));
+        Subscript s1 = new Subscript( indexes,
+                new IndexEntry(new int[] { 1 }, indexes, 2),
+                new IndexEntry(new int[] { 1 }, indexes, 0));
+
+        final List<Subscript> subs = Arrays.asList( s0, s1 );
         System.out.println("Subs := "+subs);
         partition( subs, partitions, indexes );
         System.out.println("PART := "+partitions);
