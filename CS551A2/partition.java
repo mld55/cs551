@@ -1,3 +1,5 @@
+import java.util.Collections;
+import java.util.Comparator;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
@@ -290,6 +292,26 @@ public class partition
                 }
             }
         }
+
+        // ensure we return them in Subscript order
+        final Comparator<Subscript> subCompare = new Comparator<Subscript>() {
+            public int compare(Subscript a, Subscript b) {
+                if (a.position < b.position) {
+                    return -1;
+                } else if (a.position > b.position) {
+                    return 1;
+                } else {
+                    return 0;
+                }
+            }
+            public boolean equals(Object o) {
+                // we are an anonymous comparator, no one equals us
+                return false;
+            }
+        };
+        for (final List<Subscript> part : partitions ) {
+            Collections.sort(part, subCompare);
+        }
     }
 
     public static void main(String[] args) throws Exception {
@@ -351,22 +373,6 @@ public class partition
         System.out.println("PART := "+partitions);
         for (final List<Subscript> part : partitions) {
             System.out.println("--PART");
-            java.util.Collections.sort(part,
-                    new java.util.Comparator<Subscript>() {
-                        public int compare(Subscript a, Subscript b) {
-                            if (a.position < b.position) {
-                                return -1;
-                            } else if (a.position > b.position) {
-                                return 1;
-                            } else {
-                                return 0;
-                            }
-                        }
-                        public boolean equals(Object o) {
-                            // we are an anonymous comparator, no one equals us
-                            return false;
-                        }
-                    });
             for (final Subscript sub : part) {
                 System.out.println("SUB="+sub);
                 System.out.println("\tZIV? "+sub.isZIV());
