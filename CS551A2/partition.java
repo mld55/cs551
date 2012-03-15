@@ -189,6 +189,17 @@ public class partition
             return false;
         }
 
+        public boolean isWeakCrossingSIV() {
+            if (! isSIV() ) return false;
+            for (int i = 0; i < indexes.length; i++) {
+                final String idx = indexes[i];
+                if (lhs.hasIndex(idx)) {
+                    return lhs.getCoefficient(i) == -1 * rhs.getCoefficient(i);
+                }
+            }
+            return false;
+        }
+
         public List<DependencyDirection> getDirectionVector() {
             final List<DependencyDirection> results
                 = new ArrayList<DependencyDirection>(indexes.length);
@@ -318,7 +329,9 @@ public class partition
         //test1();
         test2();
         test3();
+        test4();
     }
+
     public static void test1() {
         // A[I+1][I][K][5] = A[I][J][K][8]
         final String[] indexes = { "I","J","K" };
@@ -364,6 +377,19 @@ public class partition
         runSubscripts( Arrays.asList( s0, s1 ) );
     }
 
+    public static void test4() {
+        // A[-i+1][i+2] = A[i][-i]
+        final String[] indexes = { "I" };
+        int i = 0;
+        Subscript s0 = new Subscript( i++, indexes,
+                new IndexEntry(new int[] { -1 }, indexes, 1),
+                new IndexEntry(new int[] {  1 }, indexes, 0));
+        Subscript s1 = new Subscript( i++, indexes,
+                new IndexEntry(new int[] {  1 }, indexes, 2),
+                new IndexEntry(new int[] { -1 }, indexes, 0));
+        runSubscripts( Arrays.asList( s0, s1 ) );
+    }
+
     public static void runSubscripts(List<Subscript> subs) {
         final List<List<Subscript>> partitions
             = new ArrayList<List<Subscript>>();
@@ -380,6 +406,7 @@ public class partition
                 System.out.println("\t\tStrong-SIV? "+sub.isStrongSIV());
                 System.out.println("\t\tWeak-SIV? "+sub.isWeakSIV());
                 System.out.println("\t\tWeakZero-SIV? "+sub.isWeakZeroSIV());
+                System.out.println("\t\tWeakCrossing-SIV? "+sub.isWeakCrossingSIV());
                 System.out.println("\tMIV? "+sub.isMIV());
                 System.out.println("\tDIST="+sub.getDistanceVector());
                 System.out.println("\tDIR="+sub.getDirectionVector());
