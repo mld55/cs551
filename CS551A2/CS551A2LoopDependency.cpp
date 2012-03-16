@@ -28,7 +28,11 @@
 #include "llvm/Target/TargetData.h"
 // IMPL }}}
 
+#include <sstream>
+#include <fstream>
+
 using namespace llvm;
+
 
 namespace
 {
@@ -81,7 +85,7 @@ namespace
         // BEGIN COPY-PASTE {{{
         /// TODO: doc
         enum DependenceResult { Independent = 0, Dependent = 1, Unknown = 2 };
-
+        enum DependenceType { True = 0, Anti = 1, Output = 2};
         /// DependencePair - Represents a data dependence relation between to memory
         /// reference instructions.
         struct DependencePair : public FastFoldingSetNode
@@ -89,9 +93,14 @@ namespace
             Value *A;
             Value *B;
             DependenceResult Result;
+            bool Type[3];
             DependencePair(const FoldingSetNodeID &ID, Value *a, Value *b)
                 : FastFoldingSetNode(ID), A(a), B(b), Result(Unknown)
-                {}
+                {
+                    Type[True] = false;
+                    Type[Anti] = false;
+                    Type[Output] = false;
+                }
         };
 
         /// findOrInsertDependencePair - Return true if a DependencePair for the
@@ -155,6 +164,9 @@ namespace
         ScalarEvolution *SE;
         LoopInfo *LI;
         Loop *L;
+        /* store vertices and edges of dependency graph */
+        std::set<std::string> vertices;
+        SmallVector<std::string, 8> edges;
     };
 }
 
@@ -606,6 +618,79 @@ CS551A2::analysePair(DependencePair *P) {
                 << "+" << bAffine->constant << "\n";
             }
         }
+        
+        // assuming both are same variable
+        if (dyn_cast<StoreInst>(P->A) && dyn_cast<StoreInst>(P->B))
+        {
+            dbgs()<<"both A and B store: output dependence\n";
+            P->Type[Output] = true;
+        }
+        else if (dyn_cast<StoreInst>(P->A) && dyn_cast<LoadInst>(P->B))
+        {
+            dbgs()<<"A stores and B loads: ";
+            if (aAffine->coefficient < bAffine->coefficient || aAffine->constant < bAffine->constant)
+            {
+                dbgs()<<"anti dependence ";
+                P->Type[Anti] = true;
+            }
+            if (aAffine->coefficient > bAffine->coefficient || aAffine->constant > bAffine->constant)
+            {
+                dbgs()<<"true dependence ";
+                P->Type[True] = true;
+            }
+            dbgs()<<"\n";
+        }
+        else if (dyn_cast<LoadInst>(P->A) && dyn_cast<StoreInst>(P->B))
+        {
+            dbgs()<<"A loads and B stores: ";
+            if (bAffine->coefficient < aAffine->coefficient || bAffine->constant < aAffine->constant)
+            {
+                dbgs()<<"anti dependence ";
+                P->Type[Anti] = true;
+            }
+            if (bAffine->coefficient > aAffine->coefficient || bAffine->constant > aAffine->constant)
+            {
+                dbgs()<<"true dependence ";
+                P->Type[True] = true;
+            }
+            dbgs()<<"\n";
+        }
+
+        /* add necessary vertices and edges to dependency graph */
+
+        std::string v1, v2;
+        raw_string_ostream OS1(v1);
+        raw_string_ostream OS2(v2);
+        OS1 << *(P->A);
+        OS2 << *(P->B);
+
+        v1 = "\"" + v1 + "\"";
+        v2 = "\"" + v2 + "\"";
+
+        vertices.insert(v1);
+        vertices.insert(v2);
+        std::string edge;
+        std::string label; 
+        if (P->Type[True]) label = label + "ẟ";
+        if (P->Type[Anti])
+        {
+            if (label.length() > 0)
+            {
+                label = label + ",";
+            }
+            label = label + "ẟ(-1)";
+        }
+        if (P->Type[Output])
+        {
+            if (label.length() > 0)
+            {
+                label = label + ",";
+            }
+            label = label + "ẟ(0)";
+        }
+        edge = edge + v1 + "->" + v2;
+        edge = edge + " [label=\"" + label + "\"];\n";
+        edges.push_back(edge);
 
         Subscript *sub;
         if (aAffine && bAffine) {
@@ -705,4 +790,23 @@ void CS551A2::PrintLoopInfo(raw_ostream &OS, CS551A2 *self, const Loop* LP) {
         OS << "\t" << (x - memrefs.begin()) << "," << (y - memrefs.begin())
            << ": " << (depends(*x, *y) ? "dependent" : "independent")
            << "\n";
+           
+  /* print dependence graph as .dot file and convert to .tex and .jpg */
+  std::ofstream f("dependgraph.dot");
+
+  f<<"digraph G {\n";
+  for (std::set<std::string>::const_iterator v = vertices.begin(); v != vertices.end(); ++v)
+  {
+    f<<*v<<";\n";
+  }
+  for (SmallVector<std::string, 8>::const_iterator e = edges.begin(); e != edges.end(); ++e)
+  {
+    f<<*e;
+  }
+  f<<"}\n";
+  f.close();
+  
+  std::system("dot2tex test.dot > dependgraph.tex");
+
+  std::system("dot -Tjpg dependgraph.dot -o dependgraph.jpg");
 }
