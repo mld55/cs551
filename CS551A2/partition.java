@@ -331,6 +331,7 @@ public class partition
         test3();
         test4();
         test5();
+        test6();
     }
 
     public static void test1() {
@@ -404,6 +405,16 @@ public class partition
         runSubscripts( Arrays.asList( s0, s1 ) );
     }
 
+    public static void test6() {
+        // A[I] = A[7-I]
+        final String[] indexes = { "I" };
+        int i = 0;
+        Subscript s0 = new Subscript( i++, indexes,
+                new IndexEntry(new int[] {  1 }, indexes, 0),
+                new IndexEntry(new int[] { -1 }, indexes, 7));
+        runSubscripts( Arrays.asList( s0 ) );
+    }
+
     public static void runSubscripts(List<Subscript> subs) {
         final List<List<Subscript>> partitions
             = new ArrayList<List<Subscript>>();
@@ -430,10 +441,12 @@ public class partition
                 boolean ZIV = !part.isEmpty();
                 boolean strongSIV = !part.isEmpty();
                 boolean weakZeroSIV = !part.isEmpty();
+                boolean weakXSIV = !part.isEmpty();
                 for (final Subscript sub : part) {
                     ZIV = ZIV && sub.isZIV();
                     strongSIV = strongSIV && sub.isStrongSIV();
                     weakZeroSIV = weakZeroSIV && sub.isWeakZeroSIV();
+                    weakXSIV = weakXSIV && sub.isWeakCrossingSIV();
                 }
                 if (ZIV) {
                     boolean ok = new ZIVConstraint(L, U).satisfies( part );
@@ -446,6 +459,10 @@ public class partition
                 if (weakZeroSIV) {
                     boolean ok = new WeakZeroSIVConstraint(L, U).satisfies( part );
                     System.out.printf("WeakZeroSIV(%d,%d)? %s\n",L,U,ok);
+                }
+                if (weakXSIV) {
+                    boolean ok = new WeakCrossingSIVConstraint(L, U).satisfies( part );
+                    System.out.printf("WeakCrossingSIV(%d,%d)? %s\n",L,U,ok);
                 }
             }
         }
@@ -519,7 +536,32 @@ public class partition
                         int a = Math.max(a1, a2);
                         int c1 = sub.lhs.constant;
                         int c2 = sub.rhs.constant;
-                        int d = Math.abs((c1 - c2) / a);
+                        int d = (c1 - c2) / a;
+                        ok = ok && d <= range;
+                    }
+                }
+            }
+            return ok;
+        }
+    }
+
+    public static class WeakCrossingSIVConstraint
+            extends AbstractBoundedConstraint
+    {
+        public WeakCrossingSIVConstraint(int L, int U) { super(L,U); }
+        public boolean satisfies(List<Subscript> subs) {
+            final int range = U - L;
+            boolean ok = !subs.isEmpty();;
+            for (final Subscript sub : subs) {
+                for (int i = 0; i < sub.indexes.length; i++) {
+                    final String idx = sub.indexes[i];
+                    if (sub.lhs.hasIndex(idx)) {
+                        int a1 = sub.lhs.getCoefficient(i);
+                        int a2 = sub.rhs.getCoefficient(i);
+                        int a = a1 * a2;
+                        int c1 = sub.lhs.constant;
+                        int c2 = sub.rhs.constant;
+                        int d = (c1 - c2) / a;
                         ok = ok && d <= range;
                     }
                 }
