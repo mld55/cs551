@@ -330,6 +330,7 @@ public class partition
         test2();
         test3();
         test4();
+        test5();
     }
 
     public static void test1() {
@@ -390,6 +391,19 @@ public class partition
         runSubscripts( Arrays.asList( s0, s1 ) );
     }
 
+    public static void test5() {
+        // A[I][5] = A[2][7]
+        final String[] indexes = { "I" };
+        int i = 0;
+        Subscript s0 = new Subscript( i++, indexes,
+                new IndexEntry(new int[] { 1 }, indexes, 0),
+                new IndexEntry(new int[] { 0 }, indexes, 2));
+        Subscript s1 = new Subscript( i++, indexes,
+                new IndexEntry(new int[] { 0 }, indexes, 5),
+                new IndexEntry(new int[] { 0 }, indexes, 7));
+        runSubscripts( Arrays.asList( s0, s1 ) );
+    }
+
     public static void runSubscripts(List<Subscript> subs) {
         final List<List<Subscript>> partitions
             = new ArrayList<List<Subscript>>();
@@ -411,6 +425,106 @@ public class partition
                 System.out.println("\tDIST="+sub.getDistanceVector());
                 System.out.println("\tDIR="+sub.getDirectionVector());
             }
+            final int L=1, U=100;
+            {
+                boolean ZIV = !part.isEmpty();
+                boolean strongSIV = !part.isEmpty();
+                boolean weakZeroSIV = !part.isEmpty();
+                for (final Subscript sub : part) {
+                    ZIV = ZIV && sub.isZIV();
+                    strongSIV = strongSIV && sub.isStrongSIV();
+                    weakZeroSIV = weakZeroSIV && sub.isWeakZeroSIV();
+                }
+                if (ZIV) {
+                    boolean ok = new ZIVConstraint(L, U).satisfies( part );
+                    System.out.printf("ZIV(%d,%d)? %s\n",L,U,ok);
+                }
+                if (strongSIV) {
+                    boolean ok = new StrongSIVConstraint(L, U).satisfies( part );
+                    System.out.printf("StrongSIV(%d,%d)? %s\n",L,U,ok);
+                }
+                if (weakZeroSIV) {
+                    boolean ok = new WeakZeroSIVConstraint(L, U).satisfies( part );
+                    System.out.printf("WeakZeroSIV(%d,%d)? %s\n",L,U,ok);
+                }
+            }
+        }
+    }
+
+    public static interface Constraint
+    {
+        boolean satisfies(List<Subscript> subs);
+    }
+
+    public static abstract class AbstractBoundedConstraint
+            implements Constraint
+    {
+        protected int U;
+        protected int L;
+        public AbstractBoundedConstraint(int L, int U) {
+            this.L = L;
+            this.U = U;
+        }
+    }
+
+    public static class ZIVConstraint
+            extends AbstractBoundedConstraint
+    {
+        public ZIVConstraint(int L, int U) { super(L,U); }
+        public boolean satisfies(List<Subscript> subs) {
+            boolean ok = !subs.isEmpty();;
+            for (final Subscript sub : subs) {
+                ok = ok && (sub.lhs.constant != sub.rhs.constant);
+            }
+            return ok;
+        }
+    }
+
+    public static class StrongSIVConstraint
+            extends AbstractBoundedConstraint
+    {
+        public StrongSIVConstraint(int L, int U) { super(L,U); }
+        public boolean satisfies(List<Subscript> subs) {
+            final int range = U - L;
+            boolean ok = !subs.isEmpty();;
+            for (final Subscript sub : subs) {
+                for (int i = 0; i < sub.indexes.length; i++) {
+                    final String idx = sub.indexes[i];
+                    if (sub.lhs.hasIndex(idx)) {
+                        int a = sub.lhs.getCoefficient(i);
+                        int c1 = sub.lhs.constant;
+                        int c2 = sub.rhs.constant;
+                        int d = Math.abs((c1 - c2) / a);
+                        ok = ok && d <= range;
+                    }
+                }
+            }
+            return ok;
+        }
+    }
+
+    public static class WeakZeroSIVConstraint
+            extends AbstractBoundedConstraint
+    {
+        public WeakZeroSIVConstraint(int L, int U) { super(L,U); }
+        public boolean satisfies(List<Subscript> subs) {
+            final int range = U - L;
+            boolean ok = !subs.isEmpty();;
+            for (final Subscript sub : subs) {
+                for (int i = 0; i < sub.indexes.length; i++) {
+                    final String idx = sub.indexes[i];
+                    if (sub.lhs.hasIndex(idx)) {
+                        int a1 = sub.lhs.getCoefficient(i);
+                        int a2 = sub.rhs.getCoefficient(i);
+                        int a = Math.max(a1, a2);
+                        int c1 = sub.lhs.constant;
+                        int c2 = sub.rhs.constant;
+                        int d = Math.abs((c1 - c2) / a);
+                        ok = ok && d <= range;
+                    }
+                }
+            }
+            return ok;
         }
     }
 }
