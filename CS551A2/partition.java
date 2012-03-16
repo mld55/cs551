@@ -326,7 +326,7 @@ public class partition
     }
 
     public static void main(String[] args) throws Exception {
-        //test1();
+        test1();
         test2();
         test3();
         test4();
@@ -339,8 +339,8 @@ public class partition
         final String[] indexes = { "I","J","K" };
         int i = 0;
         Subscript s0 = new Subscript( i++, indexes,
-            new IndexEntry(new int[] { 2, 0, 0 }, indexes, 1),
-            new IndexEntry(new int[] { 0, 0, 0 }, indexes, 1));
+            new IndexEntry(new int[] { 1, 0, 0 }, indexes, 1),
+            new IndexEntry(new int[] { 1, 0, 0 }, indexes, 0));
         Subscript s1 = new Subscript( i++, indexes,
             new IndexEntry(new int[] { 1, 0, 0 }, indexes, 0),
             new IndexEntry(new int[] { 0, 1, 0 }, indexes, 0));
